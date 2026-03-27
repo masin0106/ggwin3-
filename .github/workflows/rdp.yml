@@ -20,7 +20,7 @@ jobs:
         # ========== 2. サイレントインストール ==========
         Write-Host ">>> Installing DWAgent silently..."
         $proc = Start-Process -FilePath ".\dwagent.exe" `
-          -ArgumentList "-silent","key=853-575-307" `
+          -ArgumentList "-silent","key=672-623-195" `
           -Wait -PassThru -NoNewWindow
         Write-Host ">>> Installer exited with code: $($proc.ExitCode)"
 
