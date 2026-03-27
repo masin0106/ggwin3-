@@ -15,32 +15,33 @@ jobs:
     - name: Authenticate Ngrok
       run: .\ngrok\ngrok.exe authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
 
-    - name: Set Password & Enable RDP
+    - name: Create User & Enable RDP
       run: |
-        # 接続用のパスワードを設定（好きなものに変えてもOK）
-        net user admin 1203
+        # 新しいユーザー 'remoteuser' を作成し、管理者権限を付与
+        net user remoteuser P@ssword1234! /add
+        net localgroup administrators remoteuser /add
+        
+        # RDPを有効化
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
 
     - name: Create Tunnel
       run: |
-        # バックグラウンドで起動し、待機時間を長めに設定
         Start-Process .\ngrok\ngrok.exe -ArgumentList "tcp 3389"
         echo "Waiting for ngrok to initialize..."
         Start-Sleep -Seconds 30
 
     - name: Get RDP Address
       run: |
-        $response = curl http://localhost:4040/api/tunnels | ConvertFrom-Json
+        $response = (curl http://localhost:4040/api/tunnels | ConvertFrom-Json)
         $address = $response.tunnels[0].public_url
         Write-Host "------------------------------------------"
         Write-Host "RDP Address: $address"
-        Write-Host "User: admin"
-        Write-Host "Pass: 1203"
+        Write-Host "User: remoteuser"
+        Write-Host "Pass: P@ssword1234!"
         Write-Host "------------------------------------------"
 
     - name: Keep Alive
       run: |
-        # 6時間維持
         Start-Sleep -Seconds 21600
