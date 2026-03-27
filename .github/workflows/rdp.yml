@@ -1,28 +1,73 @@
 name: Windows-Browser-Final-V7
 
-on: 
+on:
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: windows-latest
+    timeout-minutes: 360
+
     steps:
     - name: Install and Start DWService
       run: |
-        # エージェントをダウンロード
-        Invoke-WebRequest https://www.dwservice.net/download/dwagent_x86.exe -OutFile dwagent.exe
-        
-        # 【重要】-silent モードでインストールを完結させる
-        # これにより、DWService側が期待している「インストール」が完了します
-        ./dwagent.exe -silent key=853-575-307
-        
-        # 10秒待機してインストール完了を待つ
-        Start-Sleep -Seconds 10
-        
-        # 万が一起動していない場合に備え、サービスを強制開始
-        Get-Service -Name "dwagent" -ErrorAction SilentlyContinue | Start-Service
-        
+        # ========== 1. エージェントをダウンロード ==========
+        Write-Host ">>> Downloading DWAgent..."
+        Invoke-WebRequest -Uri "https://www.dwservice.net/download/dwagent_x86.exe" `
+          -OutFile "dwagent.exe" -UseBasicParsing
+        Write-Host ">>> Download complete. File size: $((Get-Item dwagent.exe).Length) bytes"
+
+        # ========== 2. サイレントインストール ==========
+        # Start-Process を使い、インストール完了まで確実に待機する
+        Write-Host ">>> Installing DWAgent silently..."
+        $proc = Start-Process -FilePath ".\dwagent.exe" `
+          -ArgumentList "-silent","key=853-575-307" `
+          -Wait -PassThru -NoNewWindow
+        Write-Host ">>> Installer exited with code: $($proc.ExitCode)"
+
+        # ========== 3. インストール完了を待機 ==========
+        Write-Host ">>> Waiting 30 seconds for service registration..."
+        Start-Sleep -Seconds 30
+
+        # ========== 4. サービスを検索・起動 ==========
+        Write-Host ">>> Searching for DWAgent service..."
+        $svc = Get-Service | Where-Object {
+          $_.Name -like "*dwagent*" -or $_.DisplayName -like "*DWAgent*"
+        }
+
+        if ($svc) {
+          Write-Host ">>> Service found: $($svc.Name) | Status: $($svc.Status)"
+          if ($svc.Status -ne 'Running') {
+            Write-Host ">>> Starting service..."
+            Start-Service -Name $svc.Name -ErrorAction Stop
+            Start-Sleep -Seconds 5
+          }
+          Write-Host ">>> Service is now: $((Get-Service -Name $svc.Name).Status)"
+        } else {
+          Write-Host ">>> WARNING: DWAgent service not found!"
+          Write-Host ">>> All services containing 'dw':"
+          Get-Service | Where-Object { $_.Name -like "*dw*" } | Format-Table -AutoSize
+
+          # フォールバック: プロセスとして直接実行を試みる
+          Write-Host ">>> Attempting to run agent directly..."
+          $agentPath = "C:\Program Files\DWAgent\runtime\dwagent.exe"
+          if (Test-Path $agentPath) {
+            Start-Process -FilePath $agentPath -NoNewWindow
+            Start-Sleep -Seconds 10
+            Write-Host ">>> Agent process started directly."
+          } else {
+            Write-Host ">>> ERROR: Agent executable not found at expected path."
+            Get-ChildItem "C:\Program Files\DWAgent\" -Recurse -ErrorAction SilentlyContinue |
+              Format-Table FullName -AutoSize
+          }
+        }
+
     - name: Keep Alive
       run: |
-        Write-Host "Please refresh your DWService dashboard!"
+        Write-Host "============================================"
+        Write-Host " DWService Agent is running!"
+        Write-Host " => https://www.dwservice.net にログインして"
+        Write-Host "    ダッシュボードから接続してください"
+        Write-Host " => セッションは6時間維持されます"
+        Write-Host "============================================"
         Start-Sleep -Seconds 21600
