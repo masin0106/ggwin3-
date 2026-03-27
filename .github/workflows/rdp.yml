@@ -1,4 +1,4 @@
-name: Windows-RDP-Debug
+name: Windows-RDP-Final
 
 on: 
   workflow_dispatch:
@@ -7,10 +7,13 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-    - name: Download Ngrok
+    - name: Download & Setup Ngrok
       run: |
-        Invoke-WebRequest https://bin.equinox.io/c/4VmDzA7iaHb/ngrok-stable-windows-amd64.zip -OutFile ngrok.zip
+        # 最新版のngrokをダウンロード
+        Invoke-WebRequest https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip -OutFile ngrok.zip
         Expand-Archive ngrok.zip
+        # 認証トークンの設定（古いバージョン用コマンドを回避）
+        .\ngrok.exe authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
 
     - name: Create User & Enable RDP
       run: |
@@ -19,21 +22,30 @@ jobs:
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
 
-    - name: Start Ngrok & Debug
+    - name: Start Ngrok & Show Address
       run: |
-        # 直接実行して、エラーメッセージをログに強制出力させる
-        # トークンは secrets.NGROK_AUTH_TOKEN を直接ここに入れます
-        .\ngrok\ngrok.exe config add-authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
+        # バックグラウンドで起動（リージョンを jp に固定）
+        Start-Process .\ngrok.exe -ArgumentList "tcp --region jp 3389"
         
-        Write-Host "Starting ngrok directly to see errors..."
-        # 30秒間だけフォアグラウンドで実行してエラーを吐かせる
-        timeout 30 .\ngrok\ngrok.exe tcp --region jp 3389
-      continue-on-error: true
-
-    - name: Final Attempt with API
-      run: |
-        # 再度バックグラウンドで起動を試みる
-        Start-Process .\ngrok\ngrok.exe -ArgumentList "tcp --region jp 3389"
+        Write-Host "Waiting 20 seconds for ngrok..."
         Start-Sleep -Seconds 20
-        $response = Invoke-RestMethod -Uri http://localhost:4040/api/tunnels
-        Write-Host "RDP Address: $($response.tunnels[0].public_url)"
+        
+        # 取得に失敗した際のエラーも表示するように強化
+        try {
+            $response = Invoke-RestMethod -Uri http://localhost:4040/api/tunnels
+            $address = $response.tunnels[0].public_url
+            Write-Host "=========================================="
+            Write-Host "RDP Address: $address"
+            Write-Host "User: remoteuser"
+            Write-Host "Pass: P@ssword1234!"
+            Write-Host "=========================================="
+        } catch {
+            Write-Host "Error: Could not get RDP address. ngrok might have failed to start."
+            # デバッグ用にAPIの生の応答を試みる
+            curl http://localhost:4040/api/tunnels
+        }
+
+    - name: Keep Alive
+      run: |
+        # 6時間維持
+        Start-Sleep -Seconds 21600
