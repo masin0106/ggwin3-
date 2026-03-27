@@ -25,27 +25,26 @@ jobs:
 
     - name: Start Ngrok & Show Address
       run: |
-        # ログファイルに出力しながら起動
-        Start-Process .\ngrok\ngrok.exe -ArgumentList "tcp --log=stdout 3389" -RedirectStandardOutput "ngrok.log"
+        # 日本リージョン(jp)を指定して起動
+        Start-Process .\ngrok\ngrok.exe -ArgumentList "tcp --region jp 3389"
         
-        Write-Host "Waiting for ngrok address..."
-        $address = ""
-        while (-not $address) {
-            if (Test-Path "ngrok.log") {
-                $log = Get-Content "ngrok.log"
-                $line = $log | Select-String -Pattern "url=tcp://[^ ]+"
-                if ($line) {
-                    $address = $line.Matches.Value.Substring(4) # 'url='を除去
-                }
-            }
-            Start-Sleep -Seconds 2
+        Write-Host "Waiting 20 seconds for ngrok to boot..."
+        Start-Sleep -Seconds 20
+        
+        # APIから直接アドレスを取得（エラーが出ても止まらないように調整）
+        try {
+          $response = Invoke-RestMethod -Uri http://localhost:4040/api/tunnels
+          $address = $response.tunnels[0].public_url
+          Write-Host "------------------------------------------"
+          Write-Host "RDP Address: $address"
+          Write-Host "User: remoteuser"
+          Write-Host "Pass: P@ssword1234!"
+          Write-Host "------------------------------------------"
+        } catch {
+          Write-Host "Failed to get address. Checking ngrok status..."
+          # 失敗した場合はプロセスが生きているか確認
+          Get-Process ngrok -ErrorAction SilentlyContinue
         }
-        
-        Write-Host "------------------------------------------"
-        Write-Host "RDP Address: $address"
-        Write-Host "User: remoteuser"
-        Write-Host "Pass: P@ssword1234!"
-        Write-Host "------------------------------------------"
 
     - name: Keep Alive
       run: |
