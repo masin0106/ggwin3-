@@ -1,4 +1,4 @@
-name: Windows-Browser-Final-V3
+name: Windows-Browser-Ultimate
 
 on: 
   workflow_dispatch:
@@ -7,22 +7,19 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-    - name: Download & Install & Force Start
+    - name: Connect DWService Directly
       run: |
         # エージェントをダウンロード
         Invoke-WebRequest https://www.dwservice.net/download/dwagent_x86.exe -OutFile dwagent.exe
         
-        # サイレントインストール実行
-        ./dwagent.exe -silent key=728-983-580
+        # インストールせず、直接「実行モード」で接続
+        # -silent の代わりに -run モードを試します
+        Start-Process .\dwagent.exe -ArgumentList "-run key=728-983-580"
         
-        # 【重要】インストールされたエージェントを強制的に起動
-        # 通常、C:\Program Files\DWAgent にインストールされます
-        Start-Process "C:\Program Files\DWAgent\dwagent.exe" -ArgumentList "-start"
-        
-        Write-Host "Wait 30 seconds for agent to link..."
+        Write-Host "Connecting to DWService..."
         Start-Sleep -Seconds 30
 
     - name: Keep Alive
       run: |
-        Write-Host "The agent should be online now. Check your DWService dashboard."
+        Write-Host "Check your DWService dashboard now!"
         Start-Sleep -Seconds 21600
