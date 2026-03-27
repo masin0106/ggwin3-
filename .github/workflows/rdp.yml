@@ -1,4 +1,4 @@
-name: Windows-RDP-Final-V2
+name: Windows-RDP-Final-V3
 
 on: 
   workflow_dispatch:
@@ -9,14 +9,9 @@ jobs:
     steps:
     - name: Download & Setup Ngrok
       run: |
-        # 最新版のngrokをダウンロード
         Invoke-WebRequest https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip -OutFile ngrok.zip
         Expand-Archive ngrok.zip -DestinationPath .
-        
-        # 解凍されたファイルをカレントディレクトリに移動（パス問題を解決）
         Get-ChildItem -Recurse -Filter "ngrok.exe" | Move-Item -Destination . -Force
-        
-        # 認証トークンの設定
         .\ngrok.exe authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
 
     - name: Create User & Enable RDP
@@ -25,27 +20,37 @@ jobs:
         net localgroup administrators remoteuser /add
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
 
     - name: Start Ngrok & Show Address
       run: |
-        # 日本リージョン(jp)を指定して起動
-        Start-Process .\ngrok.exe -ArgumentList "tcp --region jp 3389"
+        # ログファイルに出力しながら起動（これで内部エラーも記録される）
+        Start-Process .\ngrok.exe -ArgumentList "tcp --region jp 3389 --log=stdout" -RedirectStandardOutput "ngrok.log"
         
-        Write-Host "Waiting 20 seconds for ngrok..."
-        Start-Sleep -Seconds 20
-        
-        try {
-            $response = Invoke-RestMethod -Uri http://localhost:4040/api/tunnels
-            $address = $response.tunnels[0].public_url
+        Write-Host "Waiting for ngrok address..."
+        $address = ""
+        # 最大60秒間、ログからURLを探し続ける
+        for ($i=0; $i -lt 30; $i++) {
+            if (Test-Path "ngrok.log") {
+                $logContent = Get-Content "ngrok.log"
+                # "url=tcp://..." の形式を探す
+                if ($logContent -match "url=(tcp://[0-9a-z\.]+: \d+)") {
+                    $address = $matches[1]
+                    break
+                }
+            }
+            Start-Sleep -Seconds 2
+        }
+
+        if ($address) {
             Write-Host "=========================================="
             Write-Host "RDP Address: $address"
             Write-Host "User: remoteuser"
             Write-Host "Pass: P@ssword1234!"
             Write-Host "=========================================="
-        } catch {
-            Write-Host "Error: Could not get RDP address."
-            # ngrokのプロセスが動いているか最終確認
-            Get-Process ngrok -ErrorAction SilentlyContinue
+        } else {
+            Write-Host "Error: Failed to get address. Last 10 lines of log:"
+            Get-Content "ngrok.log" -Tail 10
         }
 
     - name: Keep Alive
