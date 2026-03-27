@@ -18,7 +18,6 @@ jobs:
         Write-Host ">>> Download complete. File size: $((Get-Item dwagent.exe).Length) bytes"
 
         # ========== 2. サイレントインストール ==========
-        # Start-Process を使い、インストール完了まで確実に待機する
         Write-Host ">>> Installing DWAgent silently..."
         $proc = Start-Process -FilePath ".\dwagent.exe" `
           -ArgumentList "-silent","key=853-575-307" `
@@ -31,7 +30,7 @@ jobs:
 
         # ========== 4. サービスを検索・起動 ==========
         Write-Host ">>> Searching for DWAgent service..."
-        $svc = Get-Service | Where-Object {
+        $svc = Get-Service -ErrorAction SilentlyContinue | Where-Object {
           $_.Name -like "*dwagent*" -or $_.DisplayName -like "*DWAgent*"
         }
 
@@ -44,21 +43,29 @@ jobs:
           }
           Write-Host ">>> Service is now: $((Get-Service -Name $svc.Name).Status)"
         } else {
-          Write-Host ">>> WARNING: DWAgent service not found!"
+          Write-Host ">>> WARNING: DWAgent service not found by name search."
           Write-Host ">>> All services containing 'dw':"
-          Get-Service | Where-Object { $_.Name -like "*dw*" } | Format-Table -AutoSize
+          Get-Service -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -like "*dw*" } | Format-Table -AutoSize
 
           # フォールバック: プロセスとして直接実行を試みる
           Write-Host ">>> Attempting to run agent directly..."
           $agentPath = "C:\Program Files\DWAgent\runtime\dwagent.exe"
+          $agentPath2 = "C:\Program Files (x86)\DWAgent\runtime\dwagent.exe"
+
           if (Test-Path $agentPath) {
             Start-Process -FilePath $agentPath -NoNewWindow
             Start-Sleep -Seconds 10
             Write-Host ">>> Agent process started directly."
+          } elseif (Test-Path $agentPath2) {
+            Start-Process -FilePath $agentPath2 -NoNewWindow
+            Start-Sleep -Seconds 10
+            Write-Host ">>> Agent process started directly (x86)."
           } else {
-            Write-Host ">>> ERROR: Agent executable not found at expected path."
-            Get-ChildItem "C:\Program Files\DWAgent\" -Recurse -ErrorAction SilentlyContinue |
-              Format-Table FullName -AutoSize
+            Write-Host ">>> ERROR: Agent executable not found."
+            Write-Host ">>> Searching for installed files..."
+            Get-ChildItem "C:\Program Files" -Filter "*DW*" -Directory -ErrorAction SilentlyContinue
+            Get-ChildItem "C:\Program Files (x86)" -Filter "*DW*" -Directory -ErrorAction SilentlyContinue
           }
         }
 
