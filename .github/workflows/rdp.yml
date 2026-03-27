@@ -1,4 +1,4 @@
-name: Windows-RDP
+name: Windows-RDP-Debug
 
 on: 
   workflow_dispatch:
@@ -12,40 +12,28 @@ jobs:
         Invoke-WebRequest https://bin.equinox.io/c/4VmDzA7iaHb/ngrok-stable-windows-amd64.zip -OutFile ngrok.zip
         Expand-Archive ngrok.zip
 
-    - name: Authenticate Ngrok
-      run: .\ngrok\ngrok.exe authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
-
     - name: Create User & Enable RDP
       run: |
         net user remoteuser P@ssword1234! /add
         net localgroup administrators remoteuser /add
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
 
-    - name: Start Ngrok & Show Address
+    - name: Start Ngrok & Debug
       run: |
-        # 日本リージョン(jp)を指定して起動
+        # 直接実行して、エラーメッセージをログに強制出力させる
+        # トークンは secrets.NGROK_AUTH_TOKEN を直接ここに入れます
+        .\ngrok\ngrok.exe config add-authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
+        
+        Write-Host "Starting ngrok directly to see errors..."
+        # 30秒間だけフォアグラウンドで実行してエラーを吐かせる
+        timeout 30 .\ngrok\ngrok.exe tcp --region jp 3389
+      continue-on-error: true
+
+    - name: Final Attempt with API
+      run: |
+        # 再度バックグラウンドで起動を試みる
         Start-Process .\ngrok\ngrok.exe -ArgumentList "tcp --region jp 3389"
-        
-        Write-Host "Waiting 20 seconds for ngrok to boot..."
         Start-Sleep -Seconds 20
-        
-        # APIから直接アドレスを取得（エラーが出ても止まらないように調整）
-        try {
-          $response = Invoke-RestMethod -Uri http://localhost:4040/api/tunnels
-          $address = $response.tunnels[0].public_url
-          Write-Host "------------------------------------------"
-          Write-Host "RDP Address: $address"
-          Write-Host "User: remoteuser"
-          Write-Host "Pass: P@ssword1234!"
-          Write-Host "------------------------------------------"
-        } catch {
-          Write-Host "Failed to get address. Checking ngrok status..."
-          # 失敗した場合はプロセスが生きているか確認
-          Get-Process ngrok -ErrorAction SilentlyContinue
-        }
-
-    - name: Keep Alive
-      run: |
-        Start-Sleep -Seconds 21600
+        $response = Invoke-RestMethod -Uri http://localhost:4040/api/tunnels
+        Write-Host "RDP Address: $($response.tunnels[0].public_url)"
