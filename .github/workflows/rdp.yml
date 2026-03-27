@@ -1,4 +1,4 @@
-name: Windows-RDP-Final-V3
+name: Windows-RDP-Cloudflare
 
 on: 
   workflow_dispatch:
@@ -7,12 +7,10 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-    - name: Download & Setup Ngrok
+    - name: Download Cloudflared
       run: |
-        Invoke-WebRequest https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip -OutFile ngrok.zip
-        Expand-Archive ngrok.zip -DestinationPath .
-        Get-ChildItem -Recurse -Filter "ngrok.exe" | Move-Item -Destination . -Force
-        .\ngrok.exe authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
+        Invoke-WebRequest https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.msi -OutFile cloudflared.msi
+        Start-Process msiexec.exe -ArgumentList "/i cloudflared.msi /quiet /norestart" -Wait
 
     - name: Create User & Enable RDP
       run: |
@@ -22,37 +20,13 @@ jobs:
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
 
-    - name: Start Ngrok & Show Address
+    - name: Start Cloudflare Tunnel
       run: |
-        # ログファイルに出力しながら起動（これで内部エラーも記録される）
-        Start-Process .\ngrok.exe -ArgumentList "tcp --region jp 3389 --log=stdout" -RedirectStandardOutput "ngrok.log"
+        # 認証なしの「Quick Tunnel」を開始
+        Start-Process "C:\Program Files (x86)\cloudflared\cloudflared.exe" -ArgumentList "access tcp --hostname localhost:3389 --url tcp://localhost:3389" -RedirectStandardOutput "tunnel.log"
+        # もしくは単純に名前解決できる公開URLを発行
+        Start-Process "C:\Program Files (x86)\cloudflared\cloudflared.exe" -ArgumentList "tunnel --url rdp://localhost:3389" -RedirectStandardOutput "tunnel.log"
         
-        Write-Host "Waiting for ngrok address..."
-        $address = ""
-        # 最大60秒間、ログからURLを探し続ける
-        for ($i=0; $i -lt 30; $i++) {
-            if (Test-Path "ngrok.log") {
-                $logContent = Get-Content "ngrok.log"
-                # "url=tcp://..." の形式を探す
-                if ($logContent -match "url=(tcp://[0-9a-z\.]+: \d+)") {
-                    $address = $matches[1]
-                    break
-                }
-            }
-            Start-Sleep -Seconds 2
-        }
-
-        if ($address) {
-            Write-Host "=========================================="
-            Write-Host "RDP Address: $address"
-            Write-Host "User: remoteuser"
-            Write-Host "Pass: P@ssword1234!"
-            Write-Host "=========================================="
-        } else {
-            Write-Host "Error: Failed to get address. Last 10 lines of log:"
-            Get-Content "ngrok.log" -Tail 10
-        }
-
-    - name: Keep Alive
-      run: |
-        Start-Sleep -Seconds 21600
+        Write-Host "Waiting for Cloudflare address..."
+        Start-Sleep -Seconds 20
+        Get-Content "tunnel.log" | Select-String "trycloudflare.com"
