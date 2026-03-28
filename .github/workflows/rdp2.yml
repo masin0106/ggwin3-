@@ -9,35 +9,79 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      - name: Join Tailscale network
-        uses: tailscale/github-action@v2
-        with:
-          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
-          hostname: gha-windows-rdp
+      # tailscale/github-action は GitHub-hosted Windows runner 非対応のため、
+      # Windows では公式 MSI を手動インストールして接続する
+      - name: Install Tailscale on Windows
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $page = Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/" -UseBasicParsing
+          $match = [regex]::Match($page.Content, 'href="(?<url>/stable/tailscale-setup-[^"]*-amd64\.msi)"')
+          if (-not $match.Success) {
+            throw "Failed to locate the latest Tailscale MSI URL."
+          }
+
+          $msiUrl = "https://pkgs.tailscale.com" + $match.Groups["url"].Value
+          $msiPath = Join-Path $env:RUNNER_TEMP "tailscale-setup-amd64.msi"
+
+          Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath -UseBasicParsing
+
+          Start-Process msiexec.exe -Wait -NoNewWindow -ArgumentList @(
+            "/i", "`"$msiPath`"",
+            "/qn",
+            "TS_NOLAUNCH=1",
+            "TS_UNATTENDEDMODE=always",
+            "TS_ALLOWINCOMINGCONNECTIONS=always"
+          )
+
+          Set-Service -Name "Tailscale" -StartupType Automatic
+          Start-Service -Name "Tailscale"
 
       - name: Create admin user for RDP
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
+
           $username = "runneradmin"
           $password = ConvertTo-SecureString "Password123!" -AsPlainText -Force
 
           if (-not (Get-LocalUser -Name $username -ErrorAction SilentlyContinue)) {
-            New-LocalUser -Name $username -Password $password -FullName "GitHub Actions RDP User" -Description "Temporary admin user for RDP access"
+            New-LocalUser `
+              -Name $username `
+              -Password $password `
+              -FullName "GitHub Actions RDP User" `
+              -Description "Temporary admin user for RDP access"
           }
 
-          Add-LocalGroupMember -Group "Administrators" -Member $username -ErrorAction SilentlyContinue
+          if (-not (Get-LocalGroupMember -Group "Administrators" -Member $username -ErrorAction SilentlyContinue)) {
+            Add-LocalGroupMember -Group "Administrators" -Member $username
+          }
 
-      - name: Enable RDP and allow through firewall
+      - name: Enable RDP and firewall
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
+
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name 'fDenyTSConnections' -Value 0
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name 'UserAuthentication' -Value 1
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
 
-      - name: Show Tailscale IP
+      - name: Connect to Tailscale
         shell: pwsh
+        env:
+          TS_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
         run: |
-          tailscale ip -4
-          tailscale status
+          $ErrorActionPreference = "Stop"
+
+          $tailscale = "${env:ProgramFiles}\Tailscale\tailscale.exe"
+          if (-not (Test-Path $tailscale)) {
+            throw "tailscale.exe not found at $tailscale"
+          }
+
+          & $tailscale up --auth-key="$env:TS_AUTHKEY" --hostname="gha-windows-rdp" --unattended --reset
+          & $tailscale ip -4
+          & $tailscale status
 
       - name: Keep runner alive for 6 hours
         shell: pwsh
