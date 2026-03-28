@@ -1,4 +1,4 @@
-name: Windows-Browser-Final-V7
+name: Windows-Browser-Final-V8
 
 on:
   workflow_dispatch:
@@ -10,6 +10,7 @@ jobs:
 
     steps:
     - name: Install and Start DWService
+      shell: pwsh
       run: |
         $ErrorActionPreference = "Continue"
 
@@ -17,17 +18,29 @@ jobs:
         $ProgressPreference = 'SilentlyContinue'
         Write-Host ">>> [1] Downloading DWAgent (64-bit)..."
         Invoke-WebRequest -Uri "https://www.dwservice.net/download/dwagent.exe" `
-          -OutFile "dwagent.exe" -UseBasicParsing
-        Write-Host ">>> Downloaded: $((Get-Item dwagent.exe).Length) bytes"
+          -OutFile "$env:TEMP\dwagent.exe" -UseBasicParsing
+        Write-Host ">>> Downloaded: $((Get-Item $env:TEMP\dwagent.exe).Length) bytes"
 
-        # ========== 2. cmd /c で実行（プロセスツリー全体を待機） ==========
-        Write-Host ">>> [2] Running installer via cmd /c ..."
-        cmd /c "dwagent.exe -silent key=672-623-195"
-        Write-Host ">>> cmd returned: $LASTEXITCODE"
+        # ========== 2. サイレントインストール（Start-Process -Wait使用）==========
+        Write-Host ">>> [2] Running silent installer with key=961-165-574 ..."
+        $logFile = "C:\dwagent_install.log"
+        $proc = Start-Process -FilePath "$env:TEMP\dwagent.exe" `
+          -ArgumentList "-silent", "key=961-165-574", "logpath=$logFile" `
+          -Wait -PassThru -NoNewWindow
+        Write-Host ">>> Installer exit code: $($proc.ExitCode)"
 
-        # ========== 3. 実際のインストール完了を監視（最大3分） ==========
+        # インストールログを表示
+        Start-Sleep -Seconds 3
+        if (Test-Path $logFile) {
+          Write-Host ">>> [Install Log Contents]"
+          Get-Content $logFile | ForEach-Object { Write-Host "    $_" }
+        } else {
+          Write-Host ">>> (No install log found at $logFile)"
+        }
+
+        # ========== 3. 実際のインストール完了を監視（最大5分） ==========
         Write-Host ">>> [3] Waiting for installation to actually complete..."
-        $maxWait = 180
+        $maxWait = 300
         $elapsed = 0
         while ($elapsed -lt $maxWait) {
           Start-Sleep -Seconds 10
@@ -41,21 +54,19 @@ jobs:
           $svc = Get-Service -Name "DWAgentService" -ErrorAction SilentlyContinue
           if (-not $svc) {
             $svc = Get-Service -ErrorAction SilentlyContinue |
-              Where-Object { $_.Name -like "*dwagent*" }
+              Where-Object { $_.Name -like "*dwagent*" -or $_.DisplayName -like "*DWAgent*" }
           }
 
           $svcStatus = if ($svc) { $svc.Status } else { "NOT FOUND" }
           Write-Host ">>>   ${elapsed}s elapsed | Files: $fileCount | Service: $svcStatus"
 
-          # サービスが見つかったら完了
           if ($svc) {
-            Write-Host ">>> Installation complete!"
+            Write-Host ">>> Service found! Installation complete."
             break
           }
 
-          # ファイルが十分にあるが、サービスがまだない場合はもう少し待つ
           if ($fileCount -gt 20 -and $elapsed -ge 120) {
-            Write-Host ">>> Files present but no service. Proceeding anyway."
+            Write-Host ">>> Many files present but no service. Proceeding anyway."
             break
           }
         }
@@ -67,12 +78,27 @@ jobs:
         Write-Host ">>> Admin check:"
         Write-Host ">>>   IsAdmin: $(([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))"
 
-        Write-Host ">>> Installed files:"
+        Write-Host ">>> Installed files (C:\Program Files\DWAgent):"
         if (Test-Path "C:\Program Files\DWAgent") {
           Get-ChildItem "C:\Program Files\DWAgent" -Recurse -ErrorAction SilentlyContinue |
             Select-Object FullName, Length | Format-Table -AutoSize
         } else {
           Write-Host ">>>   Directory does not exist!"
+        }
+
+        # DWAgentが別の場所にインストールされている可能性をチェック
+        Write-Host ">>> Searching for DWAgent in common locations..."
+        @(
+          "$env:LOCALAPPDATA\DWAgent",
+          "$env:APPDATA\DWAgent",
+          "C:\DWAgent",
+          "$env:ProgramData\DWAgent"
+        ) | ForEach-Object {
+          if (Test-Path $_) {
+            Write-Host ">>> Found at: $_"
+            Get-ChildItem $_ -Recurse -ErrorAction SilentlyContinue |
+              Select-Object FullName, Length | Format-Table -AutoSize
+          }
         }
 
         Write-Host ">>> All services with 'dw' or 'agent':"
@@ -85,28 +111,37 @@ jobs:
           Where-Object { $_.Name -like "*dw*" -or $_.Name -like "*agent*" } |
           Format-Table Name, Id, Path -AutoSize
 
+        # 最新のインストールログを再表示
+        if (Test-Path $logFile) {
+          Write-Host ">>> [Final Install Log]"
+          Get-Content $logFile | ForEach-Object { Write-Host "    $_" }
+        }
+
         # ========== 5. サービスを起動 ==========
         Write-Host ""
         Write-Host ">>> [5] Starting agent..."
 
-        # 方法A: サービスとして起動
         $svc = Get-Service -ErrorAction SilentlyContinue |
           Where-Object { $_.Name -like "*dwagent*" -or $_.DisplayName -like "*DWAgent*" }
         if ($svc) {
           Write-Host ">>> Starting service: $($svc.Name)..."
           Start-Service -Name $svc.Name -ErrorAction SilentlyContinue
           Start-Sleep -Seconds 5
-          Write-Host ">>> Service status: $((Get-Service $svc.Name).Status)"
+          $svcStatus = (Get-Service $svc.Name -ErrorAction SilentlyContinue).Status
+          Write-Host ">>> Service status: $svcStatus"
         } else {
           Write-Host ">>> No service found. Trying direct execution..."
 
-          # 方法B: 実行ファイルを検索して直接起動
+          # 各パスを検索して実行
           $searchPaths = @(
             "C:\Program Files\DWAgent\native\dwagsvc.exe"
             "C:\Program Files\DWAgent\native\dwagent.exe"
             "C:\Program Files\DWAgent\runtime\bin\dwagent.exe"
             "C:\Program Files\DWAgent\runtime\dwagent.exe"
             "C:\Program Files\DWAgent\dwagent.exe"
+            "$env:LOCALAPPDATA\DWAgent\native\dwagsvc.exe"
+            "$env:LOCALAPPDATA\DWAgent\native\dwagent.exe"
+            "$env:ProgramData\DWAgent\native\dwagsvc.exe"
           )
 
           $started = $false
@@ -121,19 +156,25 @@ jobs:
           }
 
           if (-not $started) {
-            # 方法C: ディレクトリ内の全 exe を検索
-            Write-Host ">>> Searching for any executable..."
-            $allExes = Get-ChildItem "C:\Program Files\DWAgent" -Filter "*.exe" -Recurse -ErrorAction SilentlyContinue
-            if ($allExes) {
-              foreach ($exe in $allExes) {
-                Write-Host ">>> Found: $($exe.FullName)"
+            Write-Host ">>> Searching for any .exe in all DWAgent locations..."
+            $allExes = @()
+            @("C:\Program Files\DWAgent", "$env:LOCALAPPDATA\DWAgent", "C:\DWAgent", "$env:ProgramData\DWAgent") | ForEach-Object {
+              if (Test-Path $_) {
+                $allExes += Get-ChildItem $_ -Filter "*.exe" -Recurse -ErrorAction SilentlyContinue
               }
-              $target = $allExes | Select-Object -First 1
+            }
+            if ($allExes.Count -gt 0) {
+              foreach ($exe in $allExes) {
+                Write-Host ">>> Found exe: $($exe.FullName)"
+              }
+              # dwagsvcを優先
+              $target = $allExes | Where-Object { $_.Name -like "*svc*" } | Select-Object -First 1
+              if (-not $target) { $target = $allExes | Select-Object -First 1 }
               Write-Host ">>> Starting: $($target.FullName)"
               Start-Process -FilePath $target.FullName -ErrorAction SilentlyContinue
               Start-Sleep -Seconds 10
             } else {
-              Write-Host ">>> ERROR: No executables found in DWAgent directory!"
+              Write-Host ">>> ERROR: No executables found in any DWAgent directory!"
             }
           }
         }
@@ -142,11 +183,15 @@ jobs:
         Write-Host ""
         Write-Host ">>> [6] Final verification:"
         Get-Process -ErrorAction SilentlyContinue |
-          Where-Object { $_.Name -like "*dw*" } |
-          Format-Table Name, Id -AutoSize
+          Where-Object { $_.Name -like "*dw*" -or $_.Name -like "*agent*" } |
+          Format-Table Name, Id, Path -AutoSize
+        Get-Service -ErrorAction SilentlyContinue |
+          Where-Object { $_.Name -like "*dw*" -or $_.Name -like "*agent*" } |
+          Format-Table Name, DisplayName, Status -AutoSize
         Write-Host ">>> Setup complete. Check DWService dashboard."
 
     - name: Keep Alive
+      shell: pwsh
       run: |
         Write-Host "============================================"
         Write-Host " DWService Agent should now be online."
