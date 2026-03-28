@@ -1,43 +1,45 @@
-name: Windows RDP with Tailscale
+name: Windows Runner RDP via Tailscale
 
-on: 
-  workflow_dispatch: # 手動で実行するための設定
+on:
+  workflow_dispatch:
 
 jobs:
-  rdp-session:
+  rdp:
     runs-on: windows-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    timeout-minutes: 360
 
-      # 1. Tailscale に接続
-      - name: Connect to Tailscale
+    steps:
+      - name: Join Tailscale network
         uses: tailscale/github-action@v2
         with:
           authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          hostname: gha-windows-rdp
 
-      # 2. RDPを有効化し、ログインユーザーを作成
-      - name: Setup RDP and User
-        shell: powershell
+      - name: Create admin user for RDP
+        shell: pwsh
         run: |
-          # ユーザー名: runneradmin / パスワード: Password123! で作成
-          $Password = ConvertTo-SecureString "Password123!" -AsPlainText -Force
-          New-LocalUser -Name "runneradmin" -Password $Password -Description "RDP User"
-          Add-LocalGroupMember -Group "Administrators" -Member "runneradmin"
-          
-          # リモートデスクトップを許可
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
+          $username = "runneradmin"
+          $password = ConvertTo-SecureString "Password123!" -AsPlainText -Force
+
+          if (-not (Get-LocalUser -Name $username -ErrorAction SilentlyContinue)) {
+            New-LocalUser -Name $username -Password $password -FullName "GitHub Actions RDP User" -Description "Temporary admin user for RDP access"
+          }
+
+          Add-LocalGroupMember -Group "Administrators" -Member $username -ErrorAction SilentlyContinue
+
+      - name: Enable RDP and allow through firewall
+        shell: pwsh
+        run: |
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name 'fDenyTSConnections' -Value 0
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-          
-          # スリープやタイムアウトを防ぐ（念のため）
-          Write-Host "RDP setup complete. Ready to connect via Tailscale IP."
 
-      # 3. 接続を維持するための待機（最大6時間）
-      - name: Keep Alive for Debugging
-        shell: powershell
+      - name: Show Tailscale IP
+        shell: pwsh
         run: |
-          Write-Host "Check your Tailscale dashboard for the IP address of this runner."
-          Write-Host "Username: runneradmin"
-          Write-Host "Password: Password123!"
-          # 6時間（21600秒）待機するスクリプト
+          tailscale ip -4
+          tailscale status
+
+      - name: Keep runner alive for 6 hours
+        shell: pwsh
+        run: |
           Start-Sleep -Seconds 21600
