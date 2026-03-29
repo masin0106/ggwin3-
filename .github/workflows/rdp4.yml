@@ -1,0 +1,54 @@
+name: Windows Runner RDP via Chrome Remote Desktop
+
+on:
+  workflow_dispatch:
+
+jobs:
+  rdp:
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Setup RDP User
+        shell: pwsh
+        run: |
+          $username = "rdpadmin"
+          $plainPassword = "GitHubRunner2026SecurePass"
+          $password = ConvertTo-SecureString $plainPassword -AsPlainText -Force
+          
+          Write-Host "Creating new local user..."
+          if (Get-LocalUser -Name $username -ErrorAction SilentlyContinue) {
+            Remove-LocalUser -Name $username
+          }
+          New-LocalUser -Name $username -Password $password -FullName "RDP Admin User"
+          Add-LocalGroupMember -Group "Administrators" -Member $username
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username
+
+      - name: Install Chrome Remote Desktop
+        shell: pwsh
+        run: |
+          $msiUrl = "https://dl.google.com/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi"
+          $msiPath = Join-Path $env:RUNNER_TEMP "chrome-remote-desktop.msi"
+          Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath
+          Write-Host "Installing Chrome Remote Desktop..."
+          Start-Process msiexec.exe -Wait -ArgumentList "/i", "`"$msiPath`"", "/qn", "/norestart"
+
+      - name: Start Chrome Remote Desktop Host
+        shell: pwsh
+        run: |
+          # ↓ここに先ほどコピーした最新の --code を貼り付けてください
+          $authCode = "4/0Aci98E9kR6w4dfZrcYqR0ydyMQ680YFFxUCVNLYkneX6u308byIodJfSj-TsRVHaBj7Xag"
+          
+          $crdPath = "${env:ProgramFiles(x86)}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
+          
+          # ホストの起動実行
+          & $crdPath --code="$authCode" --redirect-url="https://remotedesktop.google.com/_/oauthredirect" --name=$env:COMPUTERNAME --pin=123456
+          
+          Write-Host "------------------------------------------"
+          Write-Host "Chrome Remote Desktop 起動試行中..."
+          Write-Host "設定したPINコード: 123456"
+          Write-Host "------------------------------------------"
+
+      - name: Keep Alive
+        shell: pwsh
+        run: Start-Sleep -Seconds 21600
