@@ -1,0 +1,72 @@
+name: Windows Runner RDP via Chrome Remote Desktop with Proxy
+
+on:
+  workflow_dispatch:
+
+jobs:
+  rdp:
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Configure System Proxy
+        shell: pwsh
+        run: |
+          $proxyAddr = "34.146.245.42:8080"
+          Write-Host "Setting system proxy to $proxyAddr..."
+          
+          # 1. レジストリ設定 (Internet Explorer / System Proxy)
+          $regPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings"
+          Set-ItemProperty -Path $regPath -Name ProxyEnable -Value 1
+          Set-ItemProperty -Path $regPath -Name ProxyServer -Value $proxyAddr
+          
+          # 2. WinHTTP プロキシの設定 (システムサービス用)
+          netsh winhttp set proxy $proxyAddr
+          
+          # 3. 環境変数の設定 (多くのCLIツールやNode.jsアプリ用)
+          [Environment]::SetEnvironmentVariable("http_proxy", "http://$proxyAddr", "Machine")
+          [Environment]::SetEnvironmentVariable("https_proxy", "http://$proxyAddr", "Machine")
+          
+          Write-Host "Proxy configuration completed."
+
+      - name: Setup RDP User
+        shell: pwsh
+        run: |
+          $username = "rdpadmin"
+          $plainPassword = "GitHubRunner2026SecurePass"
+          $password = ConvertTo-SecureString $plainPassword -AsPlainText -Force
+          
+          if (Get-LocalUser -Name $username -ErrorAction SilentlyContinue) {
+            Remove-LocalUser -Name $username
+          }
+          New-LocalUser -Name $username -Password $password -FullName "RDP Admin User"
+          Add-LocalGroupMember -Group "Administrators" -Member $username
+
+      - name: Install Chrome Remote Desktop
+        shell: pwsh
+        run: |
+          $msiUrl = "https://dl.google.com/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi"
+          $msiPath = Join-Path $env:RUNNER_TEMP "chrome-remote-desktop.msi"
+          # プロキシ経由でダウンロード
+          Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath
+          Start-Process msiexec.exe -Wait -ArgumentList "/i", "`"$msiPath`"", "/qn", "/norestart"
+
+      - name: Start Chrome Remote Desktop Host
+        shell: pwsh
+        run: |
+          # ↓最新の --code をここに貼り付け
+          $authCode = "ここに新しいコードを貼り付けてください"
+          
+          $crdPath = "${env:ProgramFiles(x86)}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
+          
+          # Chrome Remote Desktop はシステムプロキシを自動的に参照します
+          & $crdPath --code="$authCode" --redirect-url="https://remotedesktop.google.com/_/oauthredirect" --name=$env:COMPUTERNAME --pin=123456
+          
+          Write-Host "------------------------------------------"
+          Write-Host "Proxy: 34.146.245.42:8080 を通じて接続試行中..."
+          Write-Host "PIN: 123456"
+          Write-Host "------------------------------------------"
+
+      - name: Keep Alive
+        shell: pwsh
+        run: Start-Sleep -Seconds 21600
