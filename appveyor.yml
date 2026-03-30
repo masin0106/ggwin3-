@@ -1,62 +1,56 @@
 version: 1.0.{build}
+
+# 実行環境の指定
 image: Visual Studio 2022
-clone_depth: 1
 
-build: off
-test: off
-
+# 環境変数の設定 (AppVeyorの「Encrypt data」で作成した値をここに貼る)
 environment:
-  RDP_USERNAME: rdpadmin
-  # AppVeyor の UI で暗号化した値に置き換えてください
   RDP_PASSWORD:
-    secure: qxqk7YETgxDEOgXZ/XmF/ACQctBMb7JTu3gCfCiQdh4=
+    secure: [qxqk7YETgxDEOgXZ/XmF/ACQctBMb7JTu3gCfCiQdh4=]
   CRD_AUTH_CODE:
-    secure: lEZU3oJHTbjziclfg8/5WmB3pNHodw+700T01oRQZASlLJWxAIGnwtCta/FK/mSuXxScs+MI/mUYqyvHFxrxRnaSWNbGrLC5/BL81GqgAf0=
+    secure: [あなたの暗号化AuthCode]
   CRD_PIN:
-    secure: JvQ5xpCgQsyYdE7JYqAcWQ==
+    secure: [JvQ5xpCgQsyYdE7JYqAcWQ==]
+  RDP_USERNAME: rdpadmin
 
+# ビルド（セットアップ）工程
 install:
   - ps: |
-      $ErrorActionPreference = 'Stop'
-      $username = $env:RDP_USERNAME
-      $plainPassword = $env:RDP_PASSWORD
-      $password = ConvertTo-SecureString $plainPassword -AsPlainText -Force
-
       Write-Host "Creating new local user..."
-      if (Get-LocalUser -Name $username -ErrorAction SilentlyContinue) {
-        Remove-LocalUser -Name $username
+      $password = ConvertTo-SecureString $env:RDP_PASSWORD -AsPlainText -Force
+      if (Get-LocalUser -Name $env:RDP_USERNAME -ErrorAction SilentlyContinue) {
+        Remove-LocalUser -Name $env:RDP_USERNAME
       }
-      New-LocalUser -Name $username -Password $password -FullName "RDP Admin User"
-      Add-LocalGroupMember -Group "Administrators" -Member $username
-      Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username
+      New-LocalUser -Name $env:RDP_USERNAME -Password $password -FullName "RDP Admin User"
+      Add-LocalGroupMember -Group "Administrators" -Member $env:RDP_USERNAME
+      Add-LocalGroupMember -Group "Remote Desktop Users" -Member $env:RDP_USERNAME
 
   - ps: |
-      $ErrorActionPreference = 'Stop'
-      $msiUrl = 'https://dl.google.com/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi'
-      $msiPath = Join-Path $env:TEMP 'chrome-remote-desktop.msi'
+      $msiUrl = "https://dl.google.com/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi"
+      $msiPath = Join-Path $env:TEMP "chrome-remote-desktop.msi"
+      Write-Host "Installing Chrome Remote Desktop..."
       Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath
-      Write-Host 'Installing Chrome Remote Desktop...'
-      Start-Process msiexec.exe -Wait -ArgumentList '/i', "`"$msiPath`"", '/qn', '/norestart'
+      Start-Process msiexec.exe -Wait -ArgumentList "/i", "`"$msiPath`"", "/qn", "/norestart"
+      Start-Sleep -Seconds 5
 
+# メインの実行工程
 build_script:
   - ps: |
-      $ErrorActionPreference = 'Stop'
-      $authCode = $env:CRD_AUTH_CODE
-      $pin = $env:CRD_PIN
       $crdPath = "${env:ProgramFiles(x86)}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
+      
+      # INFOログをエラーと誤認させないための設定変更
+      $oldPreference = $ErrorActionPreference
+      $ErrorActionPreference = 'Continue'
+      
+      Write-Host "Starting Chrome Remote Desktop Host..."
+      & $crdPath --code="$env:CRD_AUTH_CODE" --redirect-url="https://remotedesktop.google.com/_/oauthredirect" --name=$env:COMPUTERNAME --pin="$env:CRD_PIN"
+      
+      $ErrorActionPreference = $oldPreference
 
-      if (-not (Test-Path $crdPath)) {
-        throw "Chrome Remote Desktop host executable not found: $crdPath"
-      }
+      Write-Host "------------------------------------------"
+      Write-Host "Chrome Remote Desktop 起動試行完了"
+      Write-Host "設定したPINコード: $env:CRD_PIN"
+      Write-Host "------------------------------------------"
 
-      & $crdPath --code="$authCode" --redirect-url="https://remotedesktop.google.com/_/oauthredirect" --name=$env:COMPUTERNAME --pin="$pin"
-
-      Write-Host '------------------------------------------'
-      Write-Host 'Chrome Remote Desktop 起動試行中...'
-      Write-Host ("設定したPINコード: {0}" -f $pin)
-      Write-Host '------------------------------------------'
-
-on_finish:
-  - ps: |
-      # AppVeyor ホスト環境では既定のビルド上限があるため、必要に応じて UI 側の timeout 設定も確認してください
-      Start-Sleep -Seconds 3600
+      # AppVeyor無料枠の限界（60分）まで待機
+      Start-Sleep -Seconds 3500
