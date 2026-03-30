@@ -1,0 +1,62 @@
+version: 1.0.{build}
+image: Visual Studio 2022
+clone_depth: 1
+
+build: off
+test: off
+
+environment:
+  RDP_USERNAME: rdpadmin
+  # AppVeyor の UI で暗号化した値に置き換えてください
+  RDP_PASSWORD:
+    secure: <ENCRYPTED_RDP_PASSWORD>
+  CRD_AUTH_CODE:
+    secure: <ENCRYPTED_CRD_AUTH_CODE>
+  CRD_PIN:
+    secure: <ENCRYPTED_CRD_PIN>
+
+install:
+  - ps: |
+      $ErrorActionPreference = 'Stop'
+      $username = $env:RDP_USERNAME
+      $plainPassword = $env:RDP_PASSWORD
+      $password = ConvertTo-SecureString $plainPassword -AsPlainText -Force
+
+      Write-Host "Creating new local user..."
+      if (Get-LocalUser -Name $username -ErrorAction SilentlyContinue) {
+        Remove-LocalUser -Name $username
+      }
+      New-LocalUser -Name $username -Password $password -FullName "RDP Admin User"
+      Add-LocalGroupMember -Group "Administrators" -Member $username
+      Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username
+
+  - ps: |
+      $ErrorActionPreference = 'Stop'
+      $msiUrl = 'https://dl.google.com/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi'
+      $msiPath = Join-Path $env:TEMP 'chrome-remote-desktop.msi'
+      Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath
+      Write-Host 'Installing Chrome Remote Desktop...'
+      Start-Process msiexec.exe -Wait -ArgumentList '/i', "`"$msiPath`"", '/qn', '/norestart'
+
+build_script:
+  - ps: |
+      $ErrorActionPreference = 'Stop'
+      $authCode = $env:CRD_AUTH_CODE
+      $pin = $env:CRD_PIN
+      $crdPath = "${env:ProgramFiles(x86)}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
+
+      if (-not (Test-Path $crdPath)) {
+        throw "Chrome Remote Desktop host executable not found: $crdPath"
+      }
+
+      & $crdPath --code="$authCode" --redirect-url="https://remotedesktop.google.com/_/oauthredirect" --name=$env:COMPUTERNAME --pin="$pin"
+
+      Write-Host '------------------------------------------'
+      Write-Host 'Chrome Remote Desktop 起動試行中...'
+      Write-Host ("設定したPINコード: {0}" -f $pin)
+      Write-Host '------------------------------------------'
+
+on_finish:
+  - ps: |
+      # AppVeyor ホスト環境では既定のビルド上限があるため、必要に応じて UI 側の timeout 設定も確認してください
+      Start-Sleep -Seconds 3600
