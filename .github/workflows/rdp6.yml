@@ -1,0 +1,95 @@
+name: Windows Runner RDP via Chrome Remote Desktop with Auto file download
+
+on:
+  workflow_dispatch:
+
+jobs:
+  rdp:
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Setup RDP User
+        shell: pwsh
+        run: |
+          $username = "rdpadmin"
+          $plainPassword = "GitHubRunner2026SecurePass"
+          $password = ConvertTo-SecureString $plainPassword -AsPlainText -Force
+          
+          Write-Host "Creating new local user..."
+          if (Get-LocalUser -Name $username -ErrorAction SilentlyContinue) {
+            Remove-LocalUser -Name $username
+          }
+          New-LocalUser -Name $username -Password $password -FullName "RDP Admin User"
+          Add-LocalGroupMember -Group "Administrators" -Member $username
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username
+
+      - name: Install Chrome Remote Desktop
+        shell: pwsh
+        run: |
+          $msiUrl = "https://dl.google.com/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi"
+          $msiPath = Join-Path $env:RUNNER_TEMP "chrome-remote-desktop.msi"
+          Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath
+          Write-Host "Installing Chrome Remote Desktop..."
+          Start-Process msiexec.exe -Wait -ArgumentList "/i", "`"$msiPath`"", "/qn", "/norestart"
+
+      - name: Start Chrome Remote Desktop Host
+        shell: pwsh
+        run: |
+          # ※重要: 実行前に必ず最新の --code を取得して以下を書き換えてください
+          $authCode = "4/0Aci98E8jX2uYo4PEU5gCJbvyGv-htobJC-qU_mi8SOKNcPcYISlYb-sX3J2jXjBKt5PvHA"
+          
+          $crdPath = "${env:ProgramFiles(x86)}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
+          
+          # ホストの起動実行
+          & $crdPath --code="$authCode" --redirect-url="https://remotedesktop.google.com/_/oauthredirect" --name=$env:COMPUTERNAME --pin=123456
+          
+          Write-Host "------------------------------------------"
+          Write-Host "Chrome Remote Desktop 起動試行中..."
+          Write-Host "設定したPINコード: 123456"
+          Write-Host "------------------------------------------"
+
+      - name: Download and Open Installers
+        shell: pwsh
+        run: |
+          Write-Host "アプリのダウンロードと起動を開始します..."
+
+          # 1. StreamFab のダウンロードと実行
+          $streamFabUrl = "https://streamfab.com/mlink?p=StreamFab"
+          $streamFabExe = Join-Path $env:RUNNER_TEMP "StreamFab_Installer.exe"
+          Write-Host "Downloading StreamFab..."
+          Invoke-WebRequest -Uri $streamFabUrl -OutFile $streamFabExe
+          Start-Process -FilePath $streamFabExe
+
+          # 2. TeraBox のダウンロードと実行
+          $teraBoxUrl = "https://issuepcdn.freeterabox.com/issue/terabox/PCTeraBox/Terabox_1.44.1.162.exe?to=gl&sign=BOTH-F3530edecde9cd71b79378b290804a96-AEy6lL9NCiqh8F7koas7FtCCSiQ%3D&region=tky&pkey=00004414e957b5e9d5473ea9b1a8de64fbec"
+          $teraBoxExe = Join-Path $env:RUNNER_TEMP "TeraBox_Installer.exe"
+          Write-Host "Downloading TeraBox..."
+          Invoke-WebRequest -Uri $teraBoxUrl -OutFile $teraBoxExe
+          Start-Process -FilePath $teraBoxExe
+
+          # 3. VPN Gate のダウンロード、展開、実行
+          $vpnGateUrl = "https://download.vpngate.jp/common/cd.aspx/vpngate-client-2026.04.03-build-9807.164367.zip"
+          $vpnZipPath = Join-Path $env:RUNNER_TEMP "vpngate.zip"
+          $vpnExtractPath = Join-Path $env:RUNNER_TEMP "vpngate_extracted"
+          
+          Write-Host "Downloading VPN Gate..."
+          Invoke-WebRequest -Uri $vpnGateUrl -OutFile $vpnZipPath
+          
+          Write-Host "Extracting VPN Gate ZIP..."
+          Expand-Archive -Path $vpnZipPath -DestinationPath $vpnExtractPath -Force
+          
+          # ZIP内のセットアップEXEを自動検索して実行
+          $setupExe = Get-ChildItem -Path $vpnExtractPath -Filter "vpngate-client-v*.exe" | Select-Object -First 1
+          if ($setupExe) {
+              Write-Host "Opening VPN Gate Setup: $($setupExe.FullName)"
+              Start-Process -FilePath $setupExe.FullName
+          } else {
+              Write-Warning "VPN Gate のセットアップファイルが見つかりませんでした。"
+          }
+
+      - name: Keep Alive
+        shell: pwsh
+        run: |
+          Write-Host "RDP接続準備完了。21600秒間（6時間）待機します。"
+          Start-Sleep -Seconds 21600
