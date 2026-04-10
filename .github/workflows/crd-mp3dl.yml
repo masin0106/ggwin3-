@@ -1,4 +1,4 @@
-name: Windows Runner RDP via Chrome Remote Desktop with Auto file download
+name: Windows Runner RDP via Chrome Remote Desktop with Auto file download for Music
 
 on:
   workflow_dispatch:
