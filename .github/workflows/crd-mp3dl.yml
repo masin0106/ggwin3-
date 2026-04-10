@@ -1,0 +1,75 @@
+name: Windows Runner RDP via Chrome Remote Desktop with Auto file download
+
+on:
+  workflow_dispatch:
+
+jobs:
+  rdp:
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Setup RDP User
+        shell: pwsh
+        run: |
+          $username = "rdpadmin"
+          $plainPassword = "GitHubRunner2026SecurePass"
+          $password = ConvertTo-SecureString $plainPassword -AsPlainText -Force
+          
+          Write-Host "Creating new local user..."
+          if (Get-LocalUser -Name $username -ErrorAction SilentlyContinue) {
+            Remove-LocalUser -Name $username
+          }
+          New-LocalUser -Name $username -Password $password -FullName "RDP Admin User"
+          Add-LocalGroupMember -Group "Administrators" -Member $username
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username
+
+      - name: Install Chrome Remote Desktop
+        shell: pwsh
+        run: |
+          $msiUrl = "https://dl.google.com/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi"
+          $msiPath = Join-Path $env:RUNNER_TEMP "chrome-remote-desktop.msi"
+          Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath
+          Write-Host "Installing Chrome Remote Desktop..."
+          Start-Process msiexec.exe -Wait -ArgumentList "/i", "`"$msiPath`"", "/qn", "/norestart"
+
+      - name: Start Chrome Remote Desktop Host
+        shell: pwsh
+        run: |
+          # ※重要: 実行前に必ず最新の --code を取得して以下を書き換えてください
+          $authCode = "4/0Aci98E90np81zZOsyZaImrgCEyBwr1IP27hxa0BOMwHEJcOOIOjoKhrcPckEoBLX79xupw"
+          
+          $crdPath = "${env:ProgramFiles(x86)}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
+          
+          # ホストの起動実行
+          & $crdPath --code="$authCode" --redirect-url="https://remotedesktop.google.com/_/oauthredirect" --name=$env:COMPUTERNAME --pin=123456
+          
+          Write-Host "------------------------------------------"
+          Write-Host "Chrome Remote Desktop 起動試行中..."
+          Write-Host "設定したPINコード: 123456"
+          Write-Host "------------------------------------------"
+
+      - name: Download and Open Installers
+        shell: pwsh
+        run: |
+          Write-Host "アプリのダウンロードと起動を開始します..."
+
+          # 1. MusicFab のダウンロードと実行
+          $musicFabUrl = "https://dl.dvdfab.cn/download/musicfab_x64_1066_official_2026_03_11_10_40_44.exe"
+          $musicFabExe = Join-Path $env:RUNNER_TEMP "musicfab_x64_1066_official_2026_03_11_10_40_44.exe"
+          Write-Host "Downloading MusicFab..."
+          Invoke-WebRequest -Uri $musicFabUrl -OutFile $musicFabExe
+          Start-Process -FilePath $musicFabExe
+
+          # 2. TeraBox のダウンロードと実行
+          $teraBoxUrl = "https://issuepcdn.freeterabox.com/issue/terabox/PCTeraBox/Terabox_1.44.1.162.exe?to=gl&sign=BOTH-F3530edecde9cd71b79378b290804a96-AEy6lL9NCiqh8F7koas7FtCCSiQ%3D&region=tky&pkey=00004414e957b5e9d5473ea9b1a8de64fbec"
+          $teraBoxExe = Join-Path $env:RUNNER_TEMP "TeraBox_Installer.exe"
+          Write-Host "Downloading TeraBox..."
+          Invoke-WebRequest -Uri $teraBoxUrl -OutFile $teraBoxExe
+          Start-Process -FilePath $teraBoxExe
+
+      - name: Keep Alive
+        shell: pwsh
+        run: |
+          Write-Host "RDP接続準備完了。21600秒間（6時間）待機します。"
+          Start-Sleep -Seconds 21600
