@@ -1,0 +1,17 @@
+[Unit]
+Description=GitHub Actions yt-dlp Ephemeral Portal
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/gha-ytdlp-portal
+EnvironmentFile=/etc/gha-ytdlp-portal.env
+ExecStart=/usr/bin/node /opt/gha-ytdlp-portal/server.js
+Restart=always
+RestartSec=3
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target

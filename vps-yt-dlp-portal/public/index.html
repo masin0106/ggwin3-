@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GitHub Actions Download Studio</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #07111f;
+      --panel: rgba(12, 20, 36, 0.82);
+      --panel-strong: rgba(16, 25, 45, 0.96);
+      --line: rgba(148, 163, 184, 0.18);
+      --soft: #93a4bf;
+      --text: #e7eefb;
+      --accent: #5eead4;
+      --accent-2: #60a5fa;
+      --warn: #f59e0b;
+      --danger: #f87171;
+      --ok: #34d399;
+      --shadow: 0 20px 80px rgba(2, 6, 23, 0.55);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at top left, rgba(96, 165, 250, 0.14), transparent 28%),
+        radial-gradient(circle at top right, rgba(94, 234, 212, 0.10), transparent 24%),
+        linear-gradient(180deg, #06101d 0%, #08111d 100%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .shell {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 40px 24px 64px;
+    }
+    .hero {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 22px;
+      margin-bottom: 24px;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+    }
+    .hero-main, .hero-side, .panel {
+      padding: 28px;
+    }
+    h1 {
+      margin: 0 0 12px;
+      font-size: clamp(30px, 4vw, 48px);
+      line-height: 1.05;
+      letter-spacing: -0.04em;
+    }
+    .lead {
+      margin: 0;
+      color: var(--soft);
+      line-height: 1.8;
+      font-size: 15px;
+      max-width: 60ch;
+    }
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 22px;
+    }
+    .badge {
+      padding: 10px 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(96, 165, 250, 0.18);
+      background: rgba(96, 165, 250, 0.08);
+      color: #d7e8ff;
+      font-size: 13px;
+      letter-spacing: 0.01em;
+    }
+    .hero-side {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 18px;
+      background: linear-gradient(160deg, rgba(11, 19, 34, 0.96), rgba(13, 24, 42, 0.84));
+    }
+    .metric {
+      padding: 16px 18px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.025);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .metric-label {
+      color: var(--soft);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 10px;
+    }
+    .metric-value {
+      font-size: 20px;
+      font-weight: 700;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 22px;
+      align-items: start;
+    }
+    .panel h2 {
+      margin: 0 0 18px;
+      font-size: 20px;
+      letter-spacing: -0.02em;
+    }
+    .fields {
+      display: grid;
+      gap: 14px;
+    }
+    .field {
+      display: grid;
+      gap: 8px;
+    }
+    .field.two {
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    label {
+      font-size: 13px;
+      color: #c8d6eb;
+    }
+    input[type="text"], select, textarea {
+      width: 100%;
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      background: rgba(15, 23, 42, 0.8);
+      color: var(--text);
+      border-radius: 16px;
+      padding: 14px 16px;
+      font-size: 14px;
+      outline: none;
+      transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease;
+    }
+    input[type="text"]:focus, select:focus, textarea:focus {
+      border-color: rgba(94, 234, 212, 0.6);
+      box-shadow: 0 0 0 4px rgba(94, 234, 212, 0.12);
+      transform: translateY(-1px);
+    }
+    .checks {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: 1fr 1fr;
+    }
+    .check {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      padding: 14px 16px;
+      border-radius: 18px;
+      border: 1px solid rgba(148, 163, 184, 0.12);
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .check input { margin-top: 3px; }
+    .check strong { display: block; font-size: 14px; margin-bottom: 4px; }
+    .check span { color: var(--soft); font-size: 12px; line-height: 1.55; }
+    .actions {
+      display: flex;
+      gap: 12px;
+      margin-top: 18px;
+      flex-wrap: wrap;
+    }
+    button, .button-link {
+      appearance: none;
+      border: 0;
+      cursor: pointer;
+      border-radius: 16px;
+      padding: 14px 18px;
+      font-size: 14px;
+      font-weight: 700;
+      text-decoration: none;
+      transition: transform .18s ease, box-shadow .18s ease, opacity .18s ease;
+    }
+    button:hover, .button-link:hover { transform: translateY(-1px); }
+    .primary {
+      color: #041019;
+      background: linear-gradient(135deg, var(--accent), #7dd3fc);
+      box-shadow: 0 14px 34px rgba(34, 211, 238, 0.22);
+    }
+    .secondary {
+      color: var(--text);
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+    .status-strip {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      padding: 16px 18px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      margin-bottom: 16px;
+    }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(96, 165, 250, 0.12);
+      border: 1px solid rgba(96, 165, 250, 0.2);
+      font-size: 13px;
+    }
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: var(--accent-2);
+      box-shadow: 0 0 18px rgba(96, 165, 250, 0.8);
+    }
+    .timeline {
+      display: grid;
+      gap: 14px;
+    }
+    .line-box {
+      border-radius: 18px;
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      background: rgba(9, 14, 24, 0.86);
+      padding: 18px;
+    }
+    .line-box small {
+      display: block;
+      color: var(--soft);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 8px;
+      font-size: 11px;
+    }
+    .mono, pre {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    .progress-line {
+      font-size: 14px;
+      line-height: 1.7;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    pre {
+      margin: 0;
+      max-height: 360px;
+      overflow: auto;
+      font-size: 12px;
+      line-height: 1.6;
+      color: #d9e6fa;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .hint { color: var(--soft); font-size: 12px; line-height: 1.6; }
+    .meta-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .meta-item {
+      padding: 14px 16px;
+      border-radius: 16px;
+      border: 1px solid rgba(148, 163, 184, 0.12);
+      background: rgba(255,255,255,0.025);
+    }
+    .meta-item b { display: block; margin-bottom: 6px; }
+    .download-card {
+      margin-top: 12px;
+      padding: 18px;
+      border-radius: 18px;
+      border: 1px solid rgba(52, 211, 153, 0.22);
+      background: rgba(16, 185, 129, 0.08);
+      display: none;
+    }
+    .download-card.show { display: block; }
+    .error { color: #fecaca; }
+    .ok { color: #bbf7d0; }
+    @media (max-width: 980px) {
+      .hero, .grid, .field.two, .checks, .meta-grid { grid-template-columns: 1fr; }
+      .shell { padding: 24px 16px 48px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="hero">
+      <div class="card hero-main">
+        <h1>GitHub Actions Download Studio</h1>
+        <p class="lead">GitHub Actions の Ubuntu runner 上で yt-dlp と ffmpeg を実行し、変換後のファイルを 30 分だけ保持する一時ダウンロードページです。VPS 側は制御と表示のみを担当し、ファイル本体は runner 上でのみ保持されます。</p>
+        <div class="badge-row">
+          <span class="badge">Ephemeral Storage</span>
+          <span class="badge">Runner Hosted Transfer</span>
+          <span class="badge">Real-time Progress</span>
+          <span class="badge">Format Fallback</span>
+        </div>
+      </div>
+      <div class="card hero-side">
+        <div class="metric">
+          <div class="metric-label">公開 URL</div>
+          <div class="metric-value mono" id="publicBase">Loading...</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">対象リポジトリ</div>
+          <div class="metric-value mono" id="repoName">Loading...</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">保持ポリシー</div>
+          <div class="metric-value">ダウンロード完了後 30 分</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid">
+      <div class="card panel">
+        <h2>ダウンロード設定</h2>
+        <form id="jobForm" class="fields">
+          <div class="field">
+            <label for="sourceUrl">URL</label>
+            <input id="sourceUrl" name="sourceUrl" type="text" placeholder="https://example.com/watch?v=..." required>
+          </div>
+
+          <div class="field two">
+            <div>
+              <label for="requestFormat">出力形式</label>
+              <select id="requestFormat" name="requestFormat">
+                <option value="m4a">M4A</option>
+                <option value="mp3">MP3</option>
+                <option value="opus">Opus</option>
+                <option value="wav">WAV</option>
+                <option value="mp4-original">MP4（元画質）</option>
+                <option value="mp4-1080">MP4（1080p）</option>
+                <option value="mp4-720">MP4（720p）</option>
+                <option value="mp4-540">MP4（540p）</option>
+                <option value="mp4-480">MP4（480p）</option>
+                <option value="mp4-360">MP4（360p）</option>
+                <option value="webm">WebM</option>
+                <option value="auto" selected>指定なし</option>
+              </select>
+            </div>
+            <div>
+              <label for="requestedFilename">保存時のファイル名</label>
+              <input id="requestedFilename" name="requestedFilename" type="text" placeholder="未指定なら元動画タイトルを使用">
+            </div>
+          </div>
+
+          <div class="field two">
+            <div>
+              <label for="startTime">開始時間</label>
+              <input id="startTime" name="startTime" type="text" placeholder="00:01:30">
+            </div>
+            <div>
+              <label for="endTime">終了時間</label>
+              <input id="endTime" name="endTime" type="text" placeholder="00:03:20">
+            </div>
+          </div>
+
+          <div class="checks">
+            <label class="check">
+              <input type="checkbox" id="embedThumbnail" name="embedThumbnail">
+              <span><strong>サムネイルを埋め込む</strong>カバーアートとして埋め込みます。</span>
+            </label>
+            <label class="check">
+              <input type="checkbox" id="embedMetadata" name="embedMetadata" checked>
+              <span><strong>メタデータを埋め込む</strong>タイトル等の情報を付与します。</span>
+            </label>
+            <label class="check">
+              <input type="checkbox" id="detailedLog" name="detailedLog">
+              <span><strong>詳細ログを表示</strong>通常コンソールと同様のログ全文を表示します。</span>
+            </label>
+            <label class="check">
+              <input type="checkbox" id="preferModernCodecs" name="preferModernCodecs">
+              <span><strong>AV1 / VP9 を優先</strong>有効時は新しい映像コーデックを優先します。</span>
+            </label>
+          </div>
+
+          <div class="actions">
+            <button class="primary" type="submit">GitHub Actions で開始</button>
+            <button class="secondary" id="fillDemo" type="button">入力例をセット</button>
+          </div>
+          <div class="hint">内部の保存名はランダム文字列になります。保存時の表示名はここで指定した名前、または元動画タイトルを使います。</div>
+        </form>
+      </div>
+
+      <div class="card panel">
+        <h2>進行状況</h2>
+        <div class="status-strip">
+          <div class="status-pill"><span class="status-dot"></span><span id="statusText">待機中</span></div>
+          <div class="hint mono" id="jobIdView">job: -</div>
+        </div>
+        <div class="timeline">
+          <div class="line-box">
+            <small>Latest line</small>
+            <div class="progress-line mono" id="latestLine">ここに最新の進捗が表示されます。</div>
+          </div>
+          <div class="meta-grid">
+            <div class="meta-item"><b>出力タイトル</b><span id="titleView">-</span></div>
+            <div class="meta-item"><b>保存期限</b><span id="expiresView">-</span></div>
+            <div class="meta-item"><b>ダウンロード形式</b><span id="formatView">-</span></div>
+            <div class="meta-item"><b>状態更新</b><span id="updatedView">-</span></div>
+          </div>
+          <div class="download-card" id="downloadCard">
+            <div class="ok" style="font-weight:700;margin-bottom:8px;">ダウンロード準備が完了しました。</div>
+            <div class="hint" style="margin-bottom:12px;">期限を過ぎるとリンクは自動で無効になります。</div>
+            <a id="downloadLink" class="button-link primary" href="#">ダウンロードを開始</a>
+          </div>
+          <div class="line-box">
+            <small>Detailed log</small>
+            <pre id="detailLog">詳細ログを有効にすると、ここへ全文を表示します。</pre>
+          </div>
+          <div class="hint error" id="errorBox"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const form = document.getElementById('jobForm');
+    const fillDemo = document.getElementById('fillDemo');
+    const state = {
+      jobId: null,
+      timer: null,
+      current: null
+    };
+
+    async function fetchJson(url, options) {
+      const res = await fetch(url, options);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || data.details || 'Request failed');
+      }
+      return data;
+    }
+
+    function formatDate(value) {
+      if (!value) return '-';
+      const d = new Date(value);
+      if (Number.isNaN(d.getTime())) return value;
+      return `${d.toLocaleDateString('ja-JP')} ${d.toLocaleTimeString('ja-JP')}`;
+    }
+
+    function render(job) {
+      state.current = job;
+      document.getElementById('jobIdView').textContent = `job: ${job.id}`;
+      document.getElementById('statusText').textContent = job.status || '-';
+      document.getElementById('latestLine').textContent = job.latestLine || '-';
+      document.getElementById('detailLog').textContent = job.detailLog || '詳細ログはまだありません。';
+      document.getElementById('titleView').textContent = job.originalTitle || '取得中';
+      document.getElementById('formatView').textContent = job.outputExt ? `${job.requestFormat} → ${job.outputExt}` : job.requestFormat;
+      document.getElementById('updatedView').textContent = formatDate(job.updatedAt);
+      document.getElementById('errorBox').textContent = job.errorMessage || '';
+
+      let expiryText = '-';
+      if (job.expiresAt) {
+        const ms = new Date(job.expiresAt).getTime() - Date.now();
+        if (ms > 0) {
+          const min = Math.floor(ms / 60000);
+          const sec = Math.floor((ms % 60000) / 1000);
+          expiryText = `${formatDate(job.expiresAt)}（残り ${min}分 ${sec}秒）`;
+        } else {
+          expiryText = `${formatDate(job.expiresAt)}（期限切れ）`;
+        }
+      }
+      document.getElementById('expiresView').textContent = expiryText;
+
+      const card = document.getElementById('downloadCard');
+      const link = document.getElementById('downloadLink');
+      if (job.downloadUrl && job.status === 'ready') {
+        link.href = job.downloadUrl;
+        link.setAttribute('download', job.suggestedFilename || 'download');
+        card.classList.add('show');
+      } else {
+        card.classList.remove('show');
+      }
+    }
+
+    async function pollJob() {
+      if (!state.jobId) return;
+      try {
+        const data = await fetchJson(`/api/jobs/${state.jobId}`);
+        render(data.job);
+        if (['expired', 'failed'].includes(data.job.status)) {
+          clearInterval(state.timer);
+          state.timer = null;
+        }
+      } catch (error) {
+        document.getElementById('errorBox').textContent = error.message;
+      }
+    }
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      document.getElementById('errorBox').textContent = '';
+      document.getElementById('latestLine').textContent = 'ジョブを作成しています。';
+      document.getElementById('statusText').textContent = 'submitting';
+
+      const payload = {
+        sourceUrl: document.getElementById('sourceUrl').value.trim(),
+        requestFormat: document.getElementById('requestFormat').value,
+        requestedFilename: document.getElementById('requestedFilename').value.trim(),
+        startTime: document.getElementById('startTime').value.trim(),
+        endTime: document.getElementById('endTime').value.trim(),
+        embedThumbnail: document.getElementById('embedThumbnail').checked,
+        embedMetadata: document.getElementById('embedMetadata').checked,
+        detailedLog: document.getElementById('detailedLog').checked,
+        preferModernCodecs: document.getElementById('preferModernCodecs').checked
+      };
+
+      try {
+        const data = await fetchJson('/api/jobs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        state.jobId = data.job.id;
+        render(data.job);
+        if (state.timer) clearInterval(state.timer);
+        state.timer = setInterval(pollJob, 1500);
+        pollJob();
+      } catch (error) {
+        document.getElementById('statusText').textContent = 'error';
+        document.getElementById('errorBox').textContent = error.message;
+      }
+    });
+
+    fillDemo.addEventListener('click', () => {
+      document.getElementById('sourceUrl').value = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+      document.getElementById('requestFormat').value = 'mp4-720';
+      document.getElementById('requestedFilename').value = 'sample-download';
+      document.getElementById('startTime').value = '';
+      document.getElementById('endTime').value = '';
+      document.getElementById('embedThumbnail').checked = false;
+      document.getElementById('embedMetadata').checked = true;
+      document.getElementById('detailedLog').checked = false;
+      document.getElementById('preferModernCodecs').checked = false;
+    });
+
+    (async () => {
+      try {
+        const config = await fetchJson('/api/config');
+        document.getElementById('publicBase').textContent = config.publicBaseUrl || location.origin;
+        document.getElementById('repoName').textContent = config.repo;
+      } catch (error) {
+        document.getElementById('publicBase').textContent = location.origin;
+        document.getElementById('repoName').textContent = '-';
+      }
+    })();
+  </script>
+</body>
+</html>
