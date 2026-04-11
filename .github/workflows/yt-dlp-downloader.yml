@@ -1,0 +1,57 @@
+name: yt-dlp-downloader
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id: { required: true, type: string }
+      url: { required: true, type: string }
+      format: { required: true, type: string }
+      filename: { required: false, type: string }
+      embed_thumbnail: { required: false, type: string }
+      embed_metadata: { required: false, type: string }
+      start_time: { required: false, type: string }
+      end_time: { required: false, type: string }
+      show_detailed_log: { required: false, type: string }
+      prefer_av1_vp9: { required: false, type: string }
+      callback_base: { required: true, type: string }
+      callback_secret: { required: true, type: string }
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          python -m pip install -U yt-dlp requests
+
+      - name: Run downloader
+        env:
+          JOB_ID: ${{ inputs.job_id }}
+          URL: ${{ inputs.url }}
+          FORMAT: ${{ inputs.format }}
+          FILENAME: ${{ inputs.filename }}
+          EMBED_THUMBNAIL: ${{ inputs.embed_thumbnail }}
+          EMBED_METADATA: ${{ inputs.embed_metadata }}
+          START_TIME: ${{ inputs.start_time }}
+          END_TIME: ${{ inputs.end_time }}
+          SHOW_DETAILED_LOG: ${{ inputs.show_detailed_log }}
+          PREFER_AV1_VP9: ${{ inputs.prefer_av1_vp9 }}
+          CALLBACK_BASE: ${{ inputs.callback_base }}
+          CALLBACK_SECRET: ${{ inputs.callback_secret }}
+        run: |
+          python runner/downloader.py
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -rf /tmp/job-${{ inputs.job_id }} || true
